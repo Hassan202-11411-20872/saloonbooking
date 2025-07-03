@@ -3,7 +3,7 @@ include 'includes/config.php';
 include 'includes/header.php';
 
 // Set admin email
-$admin_email = 'admin@habibsalon.com'; // Change to your real admin email
+$admin_email = 'hassanharman44@gmail.com'; // Change to your real admin email
 
 // Fetch services for dropdown
 $services = $pdo->query("SELECT * FROM services")->fetchAll(PDO::FETCH_ASSOC);
@@ -40,16 +40,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // Send email to admin
+        // Save booking notification to file (since email doesn't work in XAMPP)
+        $notification_data = [
+            'id' => $pdo->lastInsertId(),
+            'name' => $name,
+            'email' => $email,
+            'service_name' => $service_name,
+            'date' => $date,
+            'time' => $time,
+            'created_at' => date('Y-m-d H:i:s'),
+            'status' => 'new'
+        ];
+        
+        // Save notification to file
+        $notifications_file = 'notifications.json';
+        $notifications = [];
+        
+        if (file_exists($notifications_file)) {
+            $notifications = json_decode(file_get_contents($notifications_file), true) ?: [];
+        }
+        
+        $notifications[] = $notification_data;
+        file_put_contents($notifications_file, json_encode($notifications, JSON_PRETTY_PRINT));
+        
+        // Log successful booking
+        error_log("New booking received: $name ($email) - $service_name on $date at $time");
+        
+        // Try email as backup (might work if mail server is configured)
         $subject = "New Booking at Habib Booking Prototype";
         $message = "You have a new booking:\n\n" .
             "Name: $name\n" .
             "Email: $email\n" .
             "Service: $service_name\n" .
             "Date: $date\n" .
-            "Time: $time\n";
-        $headers = "From: noreply@habibbookingprototype.com";
-        @mail($admin_email, $subject, $message, $headers);
+            "Time: $time\n" .
+            "Booked at: " . date('Y-m-d H:i:s') . "\n";
+        
+        $headers = "From: Habib Booking <hassanharman44@gmail.com>\r\n";
+        $headers .= "Reply-To: $email\r\n";
+        $headers .= "Content-Type: text/plain; charset=UTF-8\r\n";
+        $headers .= "X-Mailer: PHP/" . phpversion() . "\r\n";
+        
+        $email_sent = @mail($admin_email, $subject, $message, $headers);
+        
+        if (!$email_sent) {
+            error_log("Failed to send booking notification email to: $admin_email");
+            $email_error = "Booking saved! Check admin panel for notifications.";
+        } else {
+            error_log("Email notification sent successfully to: $admin_email");
+        }
 
         $success = true;
     }
@@ -71,6 +110,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <div class="feature" style="background:#e6ffe6; color:#2d7a2d;">
                 <h3><i class="fas fa-check-circle"></i> Booking Successful!</h3>
                 <p>Thank you for booking. We look forward to seeing you!</p>
+                <?php if (isset($email_error)): ?>
+                    <p style="font-size:0.9rem;margin-top:0.5rem;"><i class="fas fa-info-circle"></i> <?php echo $email_error; ?></p>
+                <?php else: ?>
+                    <p style="font-size:0.9rem;margin-top:0.5rem;"><i class="fas fa-envelope"></i> Confirmation email sent to admin.</p>
+                <?php endif; ?>
             </div>
         <?php else: ?>
             <?php if ($error): ?>
